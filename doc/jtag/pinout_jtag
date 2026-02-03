@@ -1,0 +1,5 @@
+TAT 2.3 25K pullup   - TDI
+NAR 2.3 25K pullup   - TCK
+SAK 0                - TDO
+TAN 2.3 25k pullup   - TMS
+IDO 0   34k pulldown - TRST

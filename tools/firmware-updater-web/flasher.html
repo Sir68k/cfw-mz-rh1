@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>MZ-RH1 Web Flasher</title>
+    <link rel="stylesheet" href="flasher.css" />
+</head>
+
+<body>
+    <div id="site-warning" class="site-warning-banner" role="alert" aria-live="polite">
+        <div class="site-warning-content">
+            <strong>Warning! Flashing firmware is not without its risks!</strong>
+            <div class="site-warning-notice">
+                Flashing firmware carries a risk of bricking your device. You assume full responsibility for any
+                resulting malfunction.
+                If something goes wrong you may need to force the device into bootloader mode by soldering bridges on
+                the mainboard - a
+                non-trivial hardware procedure if you are not used to fine soldering. Take utmost precaution: ensure full battery, use a known-good USB cable
+                and port, and avoid
+                interruptions.
+            </div>
+        </div>
+        <div class="site-warning-actions">
+            <label><input type="checkbox" id="dontShowAgain"> Don't show again</label>
+            <button id="dismissWarning" class="site-warning-dismiss">Close</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="left-pane">
+            <h2>MZ-RH1 WebUSB Flasher</h2>
+
+            <div class="control-section">
+                <h3>Device</h3>
+                <div class="button-group">
+                    <button id="connectBtn" disabled>Connect Device</button>
+                    <button id="trigger" disabled>Enter Programming Mode</button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Firmware</h3>
+                <div class="file-input-wrapper">
+                    <input type="file" id="fwFile" />
+                </div>
+                <button id="backupBtn" disabled>Backup Existing Firmware</button>
+                <button id="flashBtn" disabled>Flash New Firmware</button>
+            </div>
+
+            <div class="progress-section">
+                <h3>Progress</h3>
+                <progress id="progress" value="0" max="100"></progress>
+            </div>
+
+            <div class="control-section">
+                <h3>Log</h3>
+                <div id="log"></div>
+            </div>
+        </div>
+
+        <div class="right-pane">
+            <div class="info-section">
+                <h4>About</h4>
+                <p>This tool allows you to update the firmware on your MZ-RH1 MiniDisc player directly from your
+                    browser.</p>
+            </div>
+
+            <div class="warning-box">
+                <strong>⚠️ Before You Start:</strong>
+                <p>1. Ensure that your device is in NetMD mode<br>
+                    2. The battery of your device must be fully charged<br>
+                    3. Keep your device plugged in throughout the process
+                </p>
+            </div>
+
+            <div class="danger-box">
+                <strong>⛔ Important:</strong>
+                <p><strong>Do NOT disconnect</strong> your device during flashing. This could corrupt the firmware! The
+                    process typically takes 2-3 minutes. </p>
+            </div>
+
+            <div class="info-section">
+                <h4>Steps</h4>
+                <p>
+                <ol>
+                    <li>Click "Connect Device"</li>
+                    <li>Optional: backup your current firmware</li>
+                    <li>While in NetMD mode, click "Enter Programming Mode"</li>
+                    <li>Reconnect to the device</li>
+                    <li>Select a firmware file</li>
+                    <li>Click "Flash New Firmware"</li>
+                    <li>Wait for completion</li>
+                </ol>
+                </p>
+            </div>
+
+            <div class="info-section">
+                <h4>After Flashing</h4>
+                <p>Remove the battery to restart your device.</p>
+            </div>
+
+            <div class="info-section">
+                <h4>Driver configuration</h4>
+                <p>On Windows, you will need Zadig activated for your device in NetMD mode. It is possible that you will
+                    also need to re-enable Zadig when the device is in programming mode, as the USB PID may change.</p>
+                <p>Linux users will need to ensure that their udev configuration is set correct. As is the case with
+                    Windows, the USB PID of the device might change in programming mode. </p>
+            </div>
+        </div>
+    </div>
+
+    <footer id="site-footer">(c) 2026 Sir68k, <a href="https://sir68k.re" target="_blank"
+            rel="noopener">https://sir68k.re</a></footer>
+
+    <script src="cryptojs/crypto-js.min.js"></script>
+    <script src="hash.js"></script>
+    <script src="armcode.js"></script>
+    <script>
+        // DOM Elements
+        const logEl = document.getElementById("log");
+        const progressEl = document.getElementById("progress");
+        const connectBtn = document.getElementById("connectBtn");
+        const flashBtn = document.getElementById("flashBtn");
+        const backupBtn = document.getElementById("backupBtn");
+        const trigger = document.getElementById("trigger");
+        const fwFile = document.getElementById("fwFile");
+
+        function log(msg, cls = "") {
+            const line = document.createElement("div");
+            line.textContent = msg;
+            if (cls) line.className = cls;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    </script>
+    <script>
+        const filters = [
+            { vendorId: 0x054c, productId: 0x0286 },
+            { vendorId: 0x054c, productId: 0x0223 },
+            { vendorId: 0x054c, productId: 0x017e },
+            { vendorId: 0x054c, productId: 0xffff }
+        ];
+
+        const PID_NETMD = 0x0286;
+
+        const KNOWN_FW_VERSIONS = ["1.0r40", "1.0r60", "1.0r70", "1.0r80", "1.0r90", "1.0rA0"];
+
+        const CMD_DOWN = { req: 6, tag: "DOWN" };
+        const CMD_EXEC = { req: 3, tag: "EXEC" };
+        const CMD_HASH = { req: 7, tag: "HASH" };
+        const CMD_VER = { req: 8, tag: "VER " };
+
+        const ENDPOINT_READ = 0x80;
+        const BULK_WRITE_ENDPOINT = 2;
+        const BULK_CHUNK_SIZE = 4096;
+
+        const READER_CODE_ADDR = 0x0201_0000;
+        const READER_CODE_EXEC = READER_CODE_ADDR | 1;
+
+        const FLASHER_CODE_ADDR = 0x0200_0000;
+        const FLASHER_CODE_EXEC = FLASHER_CODE_ADDR; // ARM CODE
+
+        const STATUS_SECTOR_WRITE = 0x2000_0000;
+        const STATUS_SECTOR_MASK = 0x00FF_FFFF;
+        const STATUS_FLASHING_DONE = 0xCAFE_BABE;
+
+        const FLASH_FW_SIZE = 0x0010_0000;
+        const FLASH_FW_ADDR = 0x0100_0000;
+        const DRAM_FW_ADDR = 0x0210_0000;
+
+        let device = null;
+        let connected = false;
+        let programming = false;
+
+        // Helper functions
+        function u32le(v) {
+            const b = new ArrayBuffer(4);
+            new DataView(b).setUint32(0, v, true);
+            return new Uint8Array(b);
+        }
+
+        function concat(...arrs) {
+            let len = arrs.reduce((a, b) => a + b.length, 0);
+            let out = new Uint8Array(len);
+            let o = 0;
+            for (let a of arrs) { out.set(a, o); o += a.length; }
+            return out;
+        }
+
+        function toHex(u8) {
+            return Array.from(u8)
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+
+        function readPaddedString(dataView, offset, length) {
+            const bytes = new Uint8Array(
+                dataView.buffer,
+                dataView.byteOffset + offset,
+                length
+            );
+
+            // Find first null byte (0x00)
+            const end = bytes.indexOf(0);
+            const slice = end === -1 ? bytes : bytes.subarray(0, end);
+
+            return new TextDecoder("utf-8").decode(slice);
+        }
+
+        // Check
+
+        if (typeof navigator.usb == "undefined") {
+            log("This browser does not support WebUSB. Please use a browser that supports WebUSB!", "err");
+        } else {
+            connectBtn.disabled = false;
+        }
+
+        // Device mode identification
+
+        function deviceIsInNetMDMode() {
+            return device != null && connected && device.productId == PID_NETMD;
+        }
+
+        function deviceIsInProgrammingMode() {
+            return device != null && connected && device.productId != PID_NETMD;
+        }
+
+        // Handle device connecting
+
+        async function openDevice() {
+            device = await navigator.usb.requestDevice({ filters });
+            await device.open();
+            if (!device.configuration) await device.selectConfiguration(1);
+            await device.claimInterface(0);
+
+            connected = true;
+            if (deviceIsInNetMDMode()) {
+                log("Device connected in NetMD mode. Please backup your current firmware, or enter programming mode.", "ok");
+
+                const fw_version = await getFirmwareVersion();
+                log("Current firmware version: " + fw_version.version);
+
+                if (!fw_version.custom && KNOWN_FW_VERSIONS.indexOf(fw_version.version) == -1) {
+                    log("NOTICE: The current firmware of your MZ-RH1 is unknown !!", "warn");
+                    log("NOTICE: To aid development of custom firmwares, we kindly", "warn");
+                    log("NOTICE: ask you to make a backup of this version before flashing", "warn");
+                    log("NOTICE: and e-mail it to sir68k@gmail.com. Thank you in advance!", "warn");
+                }
+
+            } else {
+                log("Device connected in programming mode. Ready for flashing!", "ok");
+            }
+        }
+
+        navigator.usb.addEventListener('disconnect', event => {
+            log(`Device disconnected!`, "err");
+            connected = false;
+
+            if (programming) {
+                log("⚠️ WARNING — USB CONNECTION LOST DURING PROGRAMMING", "warn");
+                log("The device disconnected while flashing firmware.", "warn");
+                log("DO NOT remove the battery under any circumstances right now.", "warn");
+                log("The device is still completing the flashing process internally.", "warn");
+                log("Wait until the red LED stops flashing before removing the battery.", "warn");
+                log("This can take 1-2 minutes.", "warn");
+            }
+        });
+
+        // Send raw data - used for sending NetMD commands to enter DFU mode
+
+        async function sendRawData(endpoint, payload) {
+            await device.controlTransferOut({
+                requestType: "vendor", recipient: "interface",
+                request: endpoint, value: 0, index: 0
+            }, payload);
+        }
+
+
+        // Send a DFU command
+
+        async function sendCommand(cmd, payload) {
+            const enc = new TextEncoder();
+            const data = concat(enc.encode(cmd.tag), payload);
+            await device.controlTransferOut({
+                requestType: "vendor", recipient: "interface",
+                request: cmd.req, value: 0, index: 0
+            }, data);
+        }
+
+        async function sendNetMDCommand(cmd) {
+            await sendRawData(0x80, new Uint8Array(cmd));
+        }
+
+        async function sendNetMDFactoryCommand(cmd) {
+            await sendRawData(0xff, new Uint8Array(cmd));
+        }
+
+        async function readNetMDFactoryReply() {
+            try {
+                const raw_reply_length = await device.controlTransferIn({
+                    requestType: "vendor", recipient: "interface",
+                    request: 0xff, value: 0, index: 0
+                }, 6);
+
+                if (raw_reply_length.data.byteLength == 0)
+                    return false;
+
+                const reply_length = raw_reply_length.data.getUint16(4);
+
+                const raw_reply = await device.controlTransferIn({
+                    requestType: "vendor", recipient: "interface",
+                    request: 0xff, value: 0, index: 0
+                }, reply_length);
+
+                return raw_reply.data;
+            } catch (e) {
+                console.log(e);
+                return false;
+            }
+        }
+
+        // Factory DRAM read/write
+
+        async function factory_read_dram(addr, size = 0x10) {
+            const DIV = 2368;
+
+            const lo = Math.floor(addr % DIV);
+            const hi = Math.floor(addr / DIV);
+
+            const lo_a = (lo) & 0xFF;
+            const lo_b = (lo >> 8) & 0xFF;
+            const hi_a = (hi) & 0xFF;
+            const hi_b = (hi >> 8) & 0xFF;
+
+            await sendNetMDFactoryCommand([0x00, 0x18, 0x24, 0xff, hi_a, hi_b, lo_a, lo_b, size])
+            reply = await readNetMDFactoryReply();
+
+            return new Uint8Array(reply.buffer).slice(9);
+        }
+
+        async function factory_write_dram(addr, data, size = 0x10) {
+            const DIV = 2368;
+
+            const lo = Math.floor(addr % DIV);
+            const hi = Math.floor(addr / DIV);
+
+            const lo_a = (lo) & 0xFF;
+            const lo_b = (lo >> 8) & 0xFF;
+            const hi_a = (hi) & 0xFF;
+            const hi_b = (hi >> 8) & 0xFF;
+
+            const command_arr = new Uint8Array([0x00, 0x18, 0x25, 0xff, hi_a, hi_b, lo_a, lo_b, size]);
+            const data_arr = new Uint8Array(data);
+
+            const full_data = new Uint8Array(command_arr.length + data_arr.length);
+            full_data.set(command_arr);
+            full_data.set(data_arr, command_arr.length);
+
+            await sendNetMDFactoryCommand(full_data);
+            //return await readNetMDFactoryReply();
+        }
+
+        async function patch(addr, val, patch_nr = 0) {
+            const base = 0x01804000 + patch_nr * 0x10; // relative to dram base
+            const control = 0x01804100;                // relative to dram base
+
+            // write 5, 12 to main control
+            await factory_write_dram(control, [5], 1);
+            await factory_write_dram(control, [12], 1);
+
+            // write 0 to patch ctl/set
+            await factory_write_dram(base, [0], 1);
+
+            // write patch addr
+            await factory_write_dram(base + 4, u32le(addr), 4);
+            // write path val
+            await factory_write_dram(base + 8, val, 4);
+
+            // write 1 to patch ctl/set
+            await factory_write_dram(base, [1], 1);
+
+            // write 5, 9 to main control
+            await factory_write_dram(control, [5], 1);
+            await factory_write_dram(control, [9], 1);
+        }
+
+        async function ensureNetMDFactoryReader() {
+            /*
+                0x0200_0000:  01 03 40 E2    sub  r0, r0, #0x4000000
+                0x0200_0004:  20 30 80 E2    add  r3, r0, #0x20 ; we may want to tweak this value for larger reads - though 32 is the nicest round number
+                0x0200_0008:  08 F0 5E E2    subs pc, lr, #8
+            */
+
+            await factory_write_dram(0, [0x01, 0x03, 0x40, 0xe2, 0x80, 0x30, 0x80, 0xe2, 0x08, 0xf0, 0x5e, 0xe2 ]); // write to 0x0200_0000
+            await patch(0x10, [0x02, 0xf4, 0xa0, 0xe3], 0); // jump to 0x0200_0000
+        }
+
+        async function factory_arbritrary_read(addr, len) {
+            // you need to call ensureNetMDFactoryReader before, to ensure re-mapping of values
+            const base = 0x0400_0000 - 0x0200_0000;
+            return await factory_read_dram(base + addr, len);
+        }
+
+        // Enter DFU Mode
+        async function sendAuth() {
+            // Open/read/close subunit descriptor
+            await sendNetMDCommand([0x00, 0x18, 0x08, 0x00, 0x01, 0x00]);
+            await sendNetMDCommand([0x00, 0x18, 0x09, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            await sendNetMDCommand([0x00, 0x18, 0x08, 0x00, 0x00, 0x00]);
+
+            // Auth
+            await sendNetMDFactoryCommand([0x00, 0x18, 0x02, 0xff, 0x04, 0x4d, 0x44, 0x57, 0x4d]);
+        }
+
+        async function sendStartDFU() {
+            await sendAuth();
+            await sendNetMDFactoryCommand([0x00, 0x18, 0x62, 0xff]);
+        }
+
+        function makeVersionString(major, minor) {
+            return (major >> 4).toString(16).toUpperCase() + "." + (major & 0xF).toString(16).toUpperCase() + "r" + minor.toString(16).toUpperCase();
+        }
+
+        async function getFirmwareVersion() {
+            await sendAuth();
+            await sendNetMDFactoryCommand([0x00, 0x18, 0x13, 0xff, 0x00]);
+
+            const version = await readNetMDFactoryReply();
+
+            if (version !== false && version.getUint8(0) === 9) {
+                // Sony: len ==  7, minor@5, major@6
+                //  CFW: len == 18, base-minor@5, base-major@6, cfw-minor@7, cfw-major@8, cfw-netmd-extension@9, cfw-author@10, 8 bytes
+
+                let minor = version.getUint8(5);
+                let major = version.getUint8(6);
+
+                let custom = false;
+                let version_string = makeVersionString(major, minor);
+
+                if (version.byteLength == 18) {
+                    custom = true;
+
+                    minor = version.getUint8(7);
+                    major = version.getUint8(8);
+                    const author = readPaddedString(version, 10, 8);
+
+                    version_string = "CFW " + makeVersionString(major, minor) + " (base=" + version_string + ", author=" + author + ")";
+                }
+
+                return {
+                    custom: custom,
+                    version: version_string,
+                    major: major,
+                    minor: minor,
+                };
+            } else {
+                return false;
+            }
+        }
+
+        // Read data from USB device
+        // TODO: cleanup, move out constants
+
+        async function readData() {
+            let failCount = 0;
+            let success = false;
+            let r = { data: { buffer: [] } };
+
+            while (!success && failCount < 5) {
+                try {
+                    r = await device.controlTransferIn({
+                        requestType: "vendor", recipient: "interface",
+                        request: ENDPOINT_READ, value: 0, index: 0
+                    }, 4);
+                    success = true;
+                } catch (e) {
+                    console.log("readData controlTransferIn failure", e);
+                    failCount++;
+                    // wait 0.5s if we had a read failure
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            }
+
+            const arr = new Uint8Array(r.data.buffer);
+            if (arr.byteLength == 0) {
+                return new Uint8Array([0, 0, 0, 0]);
+            } else {
+                return arr;
+            }
+        }
+
+        // Transfer bulk data, used for copying firmware to DRAM
+
+        async function writeBulk(data) {
+            await device.transferOut(BULK_WRITE_ENDPOINT, data);
+        }
+
+        async function uploadBlob(addr, blob) {
+            // Tell device how much total data is coming
+            await sendCommand(CMD_DOWN, concat(u32le(addr), u32le(blob.length)));
+
+            let offset = 0;
+            while (offset < blob.length) {
+                // In theory we do not need to chunk, but the device typically chokes on a large amount of data
+                const chunk = blob.slice(offset, offset + BULK_CHUNK_SIZE);
+                await writeBulk(chunk);
+                offset += chunk.length;
+            }
+
+            // Device sends ACK/status after full transfer
+            await readData();
+        }
+
+
+        // Execute code at addr with arguments r0, r1
+        // Used for executing our flasher
+
+        async function execAt(addr, r0 = 0, r1 = 0) {
+            await sendCommand(CMD_EXEC, concat(u32le(addr), u32le(r0), u32le(r1), u32le(0)));
+            //return readData();
+        }
+
+
+        // Get hash for block address of size len
+        // Used for validating written firmware in DRAM, and finally flashed FW
+
+        async function getHash(addr, len) {
+            await sendCommand(CMD_HASH, concat(u32le(addr), u32le(len)));
+            return readData();
+        }
+
+        async function getVersion() {
+            await sendCommand(CMD_VER, new Uint8Array());
+            return readData();
+        }
+
+
+        // Load small util code into memory, enabling arbritrary mem reader and validator 
+
+        async function ensureReader() {
+            log("Uploading read/write stub...");
+            await uploadBlob(READER_CODE_ADDR, CODE_READ_WRITE);
+            log("Reader stub ready", "ok");
+        }
+
+        async function readAt(addr) {
+            await execAt(READER_CODE_EXEC, 0, addr);
+            return readData();
+        }
+
+        async function verifyBlob(addr, blob) {
+            log("Verifying uploaded blob...");
+            let offset = 0;
+
+            while (offset < blob.length) {
+                const readChunk = await readAt(addr + offset);
+                const chunkSize = 4;
+
+                if (!arraysEqual(blob.slice(offset, offset + chunkSize), readChunk)) {
+                    log(`Verification failed at offset 0x${offset.toString(16)}`, "err");
+                    return false;
+                }
+
+                offset += chunkSize;
+                progressEl.value = (offset / blob.length) * 100;
+            }
+
+            log(`Verification successful! ${blob.length} bytes verified`, "ok");
+            return true;
+        }
+
+        // Verify a block of memory using Sony's hashing scheme
+        // Technically we don't need to chunk here, but it seems to make things a bit more robust/safe
+
+        async function verifyBlobHash(addr, blob) {
+            log("Verifying uploaded blob...");
+            let offset = 0;
+
+            while (offset < blob.length) {
+                const chunkSize = 0x1000;
+
+                const localHash = sonyHash(blob.slice(offset, offset + chunkSize));
+                const deviceHash = await getHash(addr + offset, chunkSize)
+
+                if (!arraysEqual(localHash, deviceHash)) {
+                    log(`Verification failed at offset 0x${offset.toString(16)}`, "err");
+                    return false;
+                }
+
+                offset += chunkSize;
+                progressEl.value = (offset / blob.length) * 100;
+            }
+
+            log(`Verification successful! ${blob.length} bytes verified`, "ok");
+            return true;
+        }
+
+        function arraysEqual(a, b) {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) return false;
+            }
+            return true;
+        }
+
+        function validateFirmware(firmware) {
+            const validSize1 = FLASH_FW_SIZE;
+            const validSize2 = FLASH_FW_SIZE - 0x1000;
+
+            if (firmware.length !== validSize1 && firmware.length !== validSize2) {
+                log("Invalid firmware file!", "err");
+                return false;
+            }
+
+            // Check for MAP1 marker at offset 0xC0
+            const markerOffset = 0xC0;
+            const markerBytes = firmware.slice(markerOffset, markerOffset + 4);
+            const marker = new TextDecoder("utf-8").decode(markerBytes);
+
+            if (marker !== "MAP1") {
+                log("Invalid firmware file!", "err");
+                return false;
+            }
+
+            return true;
+        }
+
+        // Flash a given firmware
+
+        async function flashFirmware(firmware) {
+            if (!deviceIsInProgrammingMode())
+                return log("Device is not connected or in programming mode!", "warn");
+
+            progressEl.value = 0;
+
+
+            log("Uploading firmware to RAM...");
+            await uploadBlob(DRAM_FW_ADDR, firmware);
+
+            if (!await verifyBlobHash(DRAM_FW_ADDR, firmware)) {
+                throw new Error("Firmware verification failed! Please try again!");
+            }
+
+            log("Uploading flasher...");
+            await uploadBlob(FLASHER_CODE_ADDR, FLASHER_BLOB);
+
+            if (!await verifyBlob(FLASHER_CODE_ADDR, FLASHER_BLOB)) {
+                throw new Error("Flasher verification failed! Please try again!");
+            }
+
+            log("Starting flasher...");
+            programming = true;
+            await execAt(FLASHER_CODE_EXEC, 0, 0);
+
+            while (true) {
+                const statusBytes = await readData();
+                const status = new DataView(statusBytes.buffer).getUint32(0, true);
+
+                if (status === STATUS_FLASHING_DONE) {
+                    progressEl.value = 100;
+                    log("Flashing complete!", "ok");
+                    break;
+                } else if ((status & STATUS_SECTOR_WRITE) != 0) {
+                    const sector = (status & STATUS_SECTOR_MASK);
+                    let percent = (sector / FLASH_FW_SIZE) * 100;
+                    progressEl.value = percent;
+
+                    log("Flashing sector: 0x" + sector.toString(16).padStart(8, "0"));
+                } else {
+                    console.log("Unknown message: " + status.toString(16).padStart(8, "0"));
+                }
+
+                // Wait 1s before requesting new update
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            programming = false;
+
+            if (!await verifyBlobHash(FLASH_FW_ADDR, firmware)) {
+                throw new Error("Flash verification failed! Please retry!");
+            }
+
+            log("You can now disconnect your device! Remove the battery to restart.", "ok");
+        }
+    </script>
+
+    <script>
+        connectBtn.onclick = async () => {
+            try {
+                await openDevice();
+                flashBtn.disabled = false;
+                backupBtn.disabled = false;
+                trigger.disabled = false;
+            }
+            catch (e) { log("Connection failed: " + e, "err"); }
+        };
+
+        flashBtn.onclick = async () => {
+            if (!deviceIsInProgrammingMode())
+                return log("Device is not in programming mode!", "warn");
+
+            const file = fwFile.files[0];
+            if (!file) return log("Select a firmware file first", "warn");
+
+            const fw = new Uint8Array(await file.arrayBuffer());
+
+            if (!validateFirmware(fw)) {
+                return;
+            }
+
+            try {
+                backupBtn.disabled = true;
+                flashBtn.disabled = true;
+
+                await ensureReader();
+                await flashFirmware(fw);
+            } catch (e) {
+                console.log(e);
+                log("Error: " + e, "err");
+            } finally {
+                backupBtn.disabled = false;
+                flashBtn.disabled = false;
+            }
+        };
+
+        trigger.onclick = async () => {
+            if (deviceIsInProgrammingMode())
+                return log("Device is already in programming mode!", "warn");
+
+            await sendStartDFU();
+            await openDevice();
+        };
+
+        backupBtn.onclick = async () => {
+            let step = 0;
+            let reader = async function () {}
+
+            if (deviceIsInNetMDMode()) {
+                await ensureNetMDFactoryReader();
+                step = 128;
+                reader = async function (addr) {
+                    return await factory_arbritrary_read(addr, step);
+                }
+            } else if (deviceIsInProgrammingMode()) {
+                await ensureReader();
+                step = 4;
+                reader = async function (addr) {
+                    return await readAt(addr);
+                }
+            } else {
+                return log("Device is in an invalid mode.", "warn");
+            }
+
+            try {
+                backupBtn.disabled = true;
+                flashBtn.disabled = true;
+
+
+                log("Starting firmware backup...");
+
+                const total = FLASH_FW_SIZE;
+                const out = new Uint8Array(total);
+
+                let offset = 0;
+                let lastProgress = 0;
+
+                while (offset < total) {
+                    const data = await reader(FLASH_FW_ADDR + offset);
+                    const remaining = total - offset;
+                    // ensure length 4
+                    for (let i = 0; i < Math.min(remaining, data.length); i++) out[offset + i] = data[i];
+                    offset += step;
+
+                    if (offset % 0x1000 === 0 || offset === total) {
+                        const prog = Math.floor((offset / total) * 100);
+                        if (prog !== lastProgress) { progressEl.value = prog; lastProgress = prog; }
+                    }
+                }
+
+                log(`Backup read complete: ${total} bytes`, "ok");
+
+                const wordArray = CryptoJS.lib.WordArray.create(out);
+                const sha1 = CryptoJS.SHA1(wordArray).toString();
+                const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+                const fname = `firmware_backup_${stamp}_${sha1.substr(0, 8)}.bin`;
+
+                const blob = new Blob([out], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fname;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+                log(`Firmware backup saved as ${fname}`, "ok");
+            } catch (e) {
+                console.error(e);
+                log("Backup failed: " + e, "err");
+            } finally {
+                backupBtn.disabled = false;
+                flashBtn.disabled = false;
+                progressEl.value = 0;
+            }
+        };
+    </script>
+    <script>
+        (function () {
+            const banner = document.getElementById('site-warning');
+            const dismiss = document.getElementById('dismissWarning');
+            const dont = document.getElementById('dontShowAgain');
+            try {
+                if (localStorage.getItem('flasherWarningDismissed') === '1') {
+                    if (banner) banner.style.display = 'none';
+                }
+            } catch (e) { }
+            if (dismiss) {
+                dismiss.addEventListener('click', () => {
+                    if (dont && dont.checked) {
+                        try { localStorage.setItem('flasherWarningDismissed', '1'); } catch (e) { }
+                    }
+                    if (banner) banner.style.display = 'none';
+                });
+            }
+        })();
+    </script>
+</body>
+
+</html>

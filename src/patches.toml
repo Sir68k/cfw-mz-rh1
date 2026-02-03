@@ -1,0 +1,108 @@
+[firmware]
+path   = "base-fw/flash_v1.0A0_without_key_sector.bin"
+sha256 = "97632e25627376845a00bcb28f312af5c56766f319d56f5da1d49cdb96eb923b"
+output = "build/flash_v1.100_sir68k.bin"
+symbols = "src/extension-code/build/extension.sym"
+
+################
+## FW Version ##
+################
+
+[[patch]]
+name     = "Binary firmware version"
+address  = 0x00000b30
+original = [ 0xA0, 0x10 ]
+bytes    = [ 0x03, 0x11 ]
+
+[[patch]]
+name     = "String firmware version"
+address  = 0x00000b32
+original = "1.0A0"
+bytes    = [0x31, 0x2e, 0x31, 0xB2, 0xA3] # 1.1r2 where r2 uses smaller glyphs
+
+[[patch]]
+name     = "Full FW version #1"
+address  = 0x000b0462
+original = [ 0x01, 0x20 ]
+bytes    = [ 0x00, 0x20 ]
+
+[[patch]]
+name     = "Full FW version #2"
+address  = 0x000b0494
+original = [ 0x01, 0x20 ]
+bytes    = [ 0x00, 0x20 ]
+
+[[patch]] 
+name     = "NetMD Factory Version Command 0x12"
+address  = 0x000c651c
+original = [ 0xe5, 0xe0, 0x07, 0x00 ]
+value    = "cfw_factory_cmd_0x12_get_version + 1"
+
+[[patch]] 
+name     = "NetMD Factory Version Command 0x13"
+address  = 0x000c6524
+original = [ 0x21, 0xe1, 0x07, 0x00 ]
+value    = "cfw_factory_cmd_0x13_get_version + 1"
+
+###########################
+## Track Display Patches ##
+###########################
+
+[[patch]]
+name     = "Track name extension - hook #1"
+address  = 0x000cba40
+original = [ 0x00,0x01,0x16,0x25 ]
+bytes    = [ 0x00,0x01,0x25,0x25 ]
+
+[[patch]]
+name     = "Track name extension - hook #2"
+address  = 0x000cbd54
+original = [ 0x73, 0xf3, 0x0a, 0x00 ]
+value    = "track_title_renderer + 1"
+
+[[patch]]
+name     = "Hook into kana decoding"
+address  = 0x00030ab8
+original = [0x00,0xf0,0x52,0xf8]
+bl       = "decode_katakana_name"
+
+#######################
+## CFW Init Patches ##
+#######################
+
+[[patch]]
+name     = "Init function hook"
+address  = 0x0000bfc0
+original = [ 0x01, 0x49, 0x00, 0x20 ]
+bytes    = [ 0x00, 0x49, 0x08, 0x47 ]
+
+[[patch]]
+name     = "Init function address"
+address  = 0x0000bfc4
+original = [ 0x88, 0x61, 0xf7, 0x46 ]
+value    = "init + 1"
+
+##################
+## Menu Patches ##
+##################
+
+[[patch]]
+name     = "Root table pointer"
+address  = 0x000c7c6c
+original = [ 0x74, 0x80, 0x0c, 0x00 ]
+value    = "cfw_custom_menu"
+
+[[patch]]
+name     = "PlayMode string replacement"
+address  = 0x000cda15
+original = "Sub PlayMode"
+chars    = "Mode        "
+
+###############################################
+## Extension data/code for new functionality ##
+###############################################
+
+[[patch]]
+name    = "Extensions"
+address = "__cfw_start__"
+file    = "src/extension-code/build/extension.bin"
