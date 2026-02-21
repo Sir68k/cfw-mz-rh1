@@ -397,7 +397,7 @@
             await patch(0x10, [0x02, 0xf4, 0xa0, 0xe3], 0); // jump to 0x0200_0000
         }
 
-        async function factory_arbritrary_read(addr, len) {
+        async function factory_arbitrary_read(addr, len) {
             // you need to call ensureNetMDFactoryReader before, to ensure re-mapping of values
             const base = 0x0400_0000 - 0x0200_0000;
             return await factory_read_dram(base + addr, len);
@@ -537,7 +537,7 @@
         }
 
 
-        // Load small util code into memory, enabling arbritrary mem reader and validator 
+        // Load small util code into memory, enabling arbitrary mem reader and validator
 
         async function ensureReader() {
             log("Uploading read/write stub...");
@@ -740,7 +740,7 @@
                 await ensureNetMDFactoryReader();
                 step = 128;
                 reader = async function (addr) {
-                    return await factory_arbritrary_read(addr, step);
+                    return await factory_arbitrary_read(addr, step);
                 }
             } else if (deviceIsInProgrammingMode()) {
                 await ensureReader();
