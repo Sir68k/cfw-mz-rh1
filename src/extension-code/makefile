@@ -1,4 +1,4 @@
-GCC_PATH = /Applications/ArmGNUToolchain/14.2.rel1/arm-none-eabi/bin
+GCC_PATH ?= /Applications/ArmGNUToolchain/14.2.rel1/arm-none-eabi/bin
 
 CC      = $(GCC_PATH)/arm-none-eabi-gcc
 LD      = $(GCC_PATH)/arm-none-eabi-ld
