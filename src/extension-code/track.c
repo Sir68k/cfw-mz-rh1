@@ -67,7 +67,7 @@ static uint32_t sanitized_strlen(char *s)
     while (*s) {
         unsigned char c = (unsigned char)*s;
         if (c < 0x20 || c > 0x7E) {
-            *s = 'X';  // replace with space
+            *s = 'X';  // replace non-printable
         }
         s++;
         len++;
