@@ -1,0 +1,4 @@
+# common ignores for the tools directory
+__pycache__/
+*.py[cod]
+node_modules/
