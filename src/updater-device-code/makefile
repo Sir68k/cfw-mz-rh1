@@ -1,4 +1,4 @@
-GCC_PATH = /Applications/ArmGNUToolchain/14.2.rel1/arm-none-eabi/bin
+GCC_PATH ?= /Applications/ArmGNUToolchain/14.2.rel1/arm-none-eabi/bin
 
 ifdef DEBUG
 	NO_ECHO :=
@@ -21,8 +21,8 @@ CFLAGS +=   -nostdlib\
 			-ffunction-sections \
 			-Os
 			
-LDFLAGS += -T cxd2687.ld
-SRCS = main.c 
+LDFLAGS += -T updater.ld
+SRCS = updater.c 
 INCLUDES += ./
 
 CFLAGS += $(foreach i,$(INCLUDES),-I$(i)) -DFW_${TARGET_VERSION}=1

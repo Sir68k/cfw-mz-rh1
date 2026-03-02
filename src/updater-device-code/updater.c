@@ -60,7 +60,7 @@ void enable_interrupts(uint32_t cpsr)
     );
 }
 
-uint32_t usb_send_word(uint32_t word)
+void usb_send_word(uint32_t word)
 {
     *p_usb_ctl1 = 0;
     *p_usb_ctl2 |= 0x40;
