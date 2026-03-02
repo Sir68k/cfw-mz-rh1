@@ -18,13 +18,15 @@
     \
     X(OLED_BR_LOW,   0x000301FF, "Brightness L"  ) \
     X(OLED_BR_L_L,   0x020301FF, "Low"       ) \
-    X(OLED_BR_L_M,   0x030301FF, "Medium"    ) \
-    X(OLED_BR_L_H,   0x040301FF, "High"      ) \
+    X(OLED_BR_L_M1,  0x030301FF, "Medium 1"  ) \
+    X(OLED_BR_L_M2,  0x040301FF, "Medium 2"  ) \
+    X(OLED_BR_L_H,   0x050301FF, "High"      ) \
     \
     X(OLED_BR_HIGH,  0x000401FF, "Brightness H"  ) \
     X(OLED_BR_H_L,   0x020401FF, "Low"       ) \
-    X(OLED_BR_H_M,   0x030401FF, "Medium"    ) \
-    X(OLED_BR_H_H,   0x040401FF, "High"      ) \
+    X(OLED_BR_H_M1,  0x030401FF, "Medium 1"  ) \
+    X(OLED_BR_H_M2,  0x040401FF, "Medium 2"  ) \
+    X(OLED_BR_H_H,   0x050401FF, "High"      ) \
     \
     X(NETMD,         0x000002FF, "NetMD"          ) \
     \

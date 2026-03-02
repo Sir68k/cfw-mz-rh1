@@ -6,14 +6,19 @@ uint8_t cfw_disp_buff_0x30[2];
 
 static uint8_t oled_config_to_brightness(uint8_t val)
 {
+    // The return values must be chosen specifically to match the translation 
+    // LUTs used in modern OLED replacements; they are not random!
+
     switch (val)
     {
     case CFW_CONFIG_OLED_BRIGHTNESS_VERY_LOW:
         return 0x01;
     case CFW_CONFIG_OLED_BRIGHTNESS_LOW:
         return 0x04;
-    case CFW_CONFIG_OLED_BRIGHTNESS_MEDIUM:
-        return 0x18;
+    case CFW_CONFIG_OLED_BRIGHTNESS_MEDIUM_1:
+        return 0x10;
+    case CFW_CONFIG_OLED_BRIGHTNESS_MEDIUM_2:
+        return 0x19;
     default:
     case CFW_CONFIG_OLED_BRIGHTNESS_HIGH:
         return 0x1b;
