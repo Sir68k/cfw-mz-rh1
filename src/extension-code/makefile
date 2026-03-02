@@ -1,4 +1,4 @@
-GCC_PATH = /Applications/ArmGNUToolchain/14.2.rel1/arm-none-eabi/bin
+GCC_PATH ?= /Applications/ArmGNUToolchain/14.2.rel1/arm-none-eabi/bin
 
 CC      = $(GCC_PATH)/arm-none-eabi-gcc
 LD      = $(GCC_PATH)/arm-none-eabi-ld
@@ -14,10 +14,25 @@ CFLAGS +=   -nostdlib \
 			-mtune=arm7tdmi \
 			-mthumb-interwork -mthumb\
 			-ffunction-sections \
+			-fmerge-all-constants \
+			-fno-builtin \
+			-fno-jump-tables \
 			-Os
 			
-LDFLAGS += -T cxd2687.ld
-SRCS = init.c track.c menu.c netmd.c
+LDFLAGS += -T extension.ld --print-memory-usage
+
+SRCS = src/init.c \
+       src/track.c \
+	   src/track_config.c \
+	   src/netmd_factory.c \
+	   src/menu_resources.c \
+	   src/cfw_config.c \
+	   src/cfw_menu.c \
+	   src/menu.c \
+	   src/oled_config.c \
+	   src/moved_data.c \
+	   src/input.c
+
 INCLUDES += ./
 
 TARGET_NAME=extension

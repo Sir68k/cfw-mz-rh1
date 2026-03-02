@@ -1,8 +1,12 @@
 MEMORY
 {
-  flash    (rx)  : ORIGIN = 0x00000000, LENGTH = 0x000A0000
-  sram     (rwx) : ORIGIN = 0x00800000, LENGTH = 0x00008000
-  dram     (rwx) : ORIGIN = 0x02000000, LENGTH = 0x01000000
+  # flash    (rx)  : ORIGIN = 0x00000000, LENGTH = 0x000A0000
+  # sram     (rwx) : ORIGIN = 0x00800000, LENGTH = 0x00008000
+  # dram     (rwx) : ORIGIN = 0x02000000, LENGTH = 0x01000000
+
+  # Flash free zone: 000E_1000 - 000E_B000 -> A000 (40_960, ~40k) bytes
+  # S-RAM safe zone: 0080_5e00 - 0080_7800 -> 1A00 (06_656,  ~6k) bytes
+  # D-RAM safe zone: 0200_8900 - 0200_e300 -> 5A00 (23_040, ~23k) bytes
 
   s_flash  (rx)  : ORIGIN = 0x000E1000, LENGTH = 0x0000A000
   s_sram   (rwx) : ORIGIN = 0x00805e00, LENGTH = 0x00001A00
@@ -23,7 +27,6 @@ SECTIONS
 
     .data : AT (LOADADDR(.text) + SIZEOF(.text))
     {
-        LONG(0xBEBA5CD1);
         __data_start__ = .;
         *(.data*)
         __data_end__ = .;

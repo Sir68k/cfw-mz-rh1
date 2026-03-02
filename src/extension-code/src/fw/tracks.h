@@ -73,4 +73,7 @@ typedef uint32_t ftype_int_to_string(
 );
 static ftype_int_to_string* int_to_string = (ftype_int_to_string*)(THUMB_ADDR(0xb6170));
 
+typedef uint32_t ftype_get_playback_state();
+static ftype_get_playback_state* get_playback_state = (ftype_get_playback_state*)(THUMB_ADDR(0x39e50));
+
 

@@ -1,7 +1,7 @@
 [firmware]
 path   = "base-fw/flash_v1.0A0_without_key_sector.bin"
 sha256 = "97632e25627376845a00bcb28f312af5c56766f319d56f5da1d49cdb96eb923b"
-output = "build/flash_v1.100_sir68k.bin"
+output = "build/flash_v1.2r4_sir68k.bin"
 symbols = "src/extension-code/build/extension.sym"
 
 ################
@@ -9,37 +9,37 @@ symbols = "src/extension-code/build/extension.sym"
 ################
 
 [[patch]]
-name     = "Binary firmware version"
+name     = "[FW Version] In binary"
 address  = 0x00000b30
 original = [ 0xA0, 0x10 ]
-bytes    = [ 0x03, 0x11 ]
+bytes    = [ 0x04, 0x12 ]
 
 [[patch]]
-name     = "String firmware version"
+name     = "[FW Version] As a string"
 address  = 0x00000b32
 original = "1.0A0"
-bytes    = [0x31, 0x2e, 0x31, 0xB2, 0xA3] # 1.1r2 where r2 uses smaller glyphs
+bytes    = [0x31, 0x2e, 0x32, 0xB2, 0xA4] # 1.2r4 where r2 uses smaller glyphs
 
 [[patch]]
-name     = "Full FW version #1"
+name     = "[FW Version] Enable full FW version in menu #1"
 address  = 0x000b0462
 original = [ 0x01, 0x20 ]
 bytes    = [ 0x00, 0x20 ]
 
 [[patch]]
-name     = "Full FW version #2"
+name     = "[FW Version] Enable full FW version in menu #2"
 address  = 0x000b0494
 original = [ 0x01, 0x20 ]
 bytes    = [ 0x00, 0x20 ]
 
 [[patch]] 
-name     = "NetMD Factory Version Command 0x12"
+name     = "[FW Version] Update NetMD factory version command 0x12"
 address  = 0x000c651c
 original = [ 0xe5, 0xe0, 0x07, 0x00 ]
 value    = "cfw_factory_cmd_0x12_get_version + 1"
 
 [[patch]] 
-name     = "NetMD Factory Version Command 0x13"
+name     = "[FW Version] Update NetMD factory version command 0x13"
 address  = 0x000c6524
 original = [ 0x21, 0xe1, 0x07, 0x00 ]
 value    = "cfw_factory_cmd_0x13_get_version + 1"
@@ -49,35 +49,35 @@ value    = "cfw_factory_cmd_0x13_get_version + 1"
 ###########################
 
 [[patch]]
-name     = "Track name extension - hook #1"
+name     = "[Track Name Ext] Hook #1"
 address  = 0x000cba40
 original = [ 0x00,0x01,0x16,0x25 ]
 bytes    = [ 0x00,0x01,0x25,0x25 ]
 
 [[patch]]
-name     = "Track name extension - hook #2"
+name     = "[Track Name Ext] Hook #2"
 address  = 0x000cbd54
 original = [ 0x73, 0xf3, 0x0a, 0x00 ]
 value    = "track_title_renderer + 1"
 
 [[patch]]
-name     = "Hook into kana decoding"
+name     = "[Track Name Ext] Hook into kana decoding"
 address  = 0x00030ab8
 original = [0x00,0xf0,0x52,0xf8]
-bl       = "decode_katakana_name"
+bl       = "hook_decode_katakana_name"
 
 #######################
 ## CFW Init Patches ##
 #######################
 
 [[patch]]
-name     = "Init function hook"
+name     = "[Init] Patch supporting CFW init hook"
 address  = 0x0000bfc0
 original = [ 0x01, 0x49, 0x00, 0x20 ]
 bytes    = [ 0x00, 0x49, 0x08, 0x47 ]
 
 [[patch]]
-name     = "Init function address"
+name     = "[Init] Hook for CFW init"
 address  = 0x0000bfc4
 original = [ 0x88, 0x61, 0xf7, 0x46 ]
 value    = "init + 1"
@@ -87,16 +87,147 @@ value    = "init + 1"
 ##################
 
 [[patch]]
-name     = "Root table pointer"
+name     = "[MENU] Root table pointer"
 address  = 0x000c7c6c
 original = [ 0x74, 0x80, 0x0c, 0x00 ]
-value    = "cfw_custom_menu"
+value    = "menu_items_main"
+
+[[patch-disabled]]
+name     = "[MENU] Enable audio options on remote control #1"
+address  = 0x000c9fec
+original = [ 0x04, 0x00, 0x00, 0x00 ]
+value    = 0x2000000
+
+[[patch-disabled]]
+name     = "[MENU] Enable audio options on remote control #2"
+address  = 0x000ca030
+original = [ 0x01, 0x10, 0x00, 0x00 ]
+value    = 0x01
+
+[[patch-disabled]]
+name     = "[MENU] Enable audio options on remote control #3"
+address  = 0x0003f5c0
+original = [ 0x04, 0xf0, 0x56, 0xf8 ]
+value    = 0x00
 
 [[patch]]
-name     = "PlayMode string replacement"
+name     = "[MENU] Enable REC settings on remote control"
+address  = 0x000c9554
+original = [ 0x04, 0x00, 0x04, 0x00 ]
+value    = 0x2000000
+
+[[patch]]
+name     = "[MENU RESOURCES] PlayMode string replacement"
 address  = 0x000cda15
 original = "Sub PlayMode"
 chars    = "Mode        "
+
+[[patch]]
+name     = "[MENU RESOURCES] Patch OLED title resource loader"
+address  = [0x000b0c46,0x000b0c8e,0x000b0cd0,0x000b0d18,0x000b0d58]
+bl       = "cfw_load_menu_string_oled"
+
+[[patch-disabled]]
+name     = "[MENU] Patch fw version menu"
+address  = 0x000cc010
+original = [0x09, 0x04, 0x0b, 0x00]
+value    = "cfw_menu_about + 1"
+
+##################
+## OLED Patches ##
+##################
+
+[[patch]]
+name     = "[OLED] Hook into OLED brightness handling function"
+address  = 0x000c4980
+original = [0xf5, 0xd4, 0x03, 0x00]
+value    = "cfw_disp_cmd_0x30_set_brightness + 1"
+
+[[patch]]
+name     = "[OLED] Don't skip blackout if in USB mode"
+address  = 0x0002ef46
+original = [0x04, 0xd1]
+bytes    = [0x04, 0xe0]
+
+[[patch]]
+name     = "[OLED] Hook into auto-off mode"
+address  = 0x0002ef70
+original = [0x02, 0x20, 0x20, 0x73]
+bl       = "cfw_enable_blackout"
+
+[[patch]]
+name     = "[OLED] Hook into battery symbol enqueue command"
+address  = 0x0009f4d4
+original = [0x9d, 0xf7, 0xa6, 0xff]
+bl       = "cfw_bat_disp_enqueue_cmd"
+
+####################
+## EEPROM Storage ##
+####################
+
+[[patch]]
+name     = "[EEPROM] CFW block (src addr)"
+address  = 0x000c37c8
+original = [0x00, 0x04]
+bytes    = [0x00, 0x07]
+
+[[patch]]
+name     = "[EEPROM] CFW block (len)"
+address  = 0x000c37ca
+original = [0x00, 0x00]
+bytes    = [0x14, 0x00]
+
+[[patch]]
+name     = "[EEPROM] CFW block (dest addr)"
+address  = 0x000c37cc
+original = [0x00, 0x00, 0x00, 0x00]
+value    = "cfw_eeprom_data"
+
+[[patch]]
+name     = "[EEPROM] Replace ptr to 0x000c37d4 with $some_table"
+descr    = "We needed the space at 0x000c37d4, so moved to table to $some_table"
+address  = 0x00029e98
+original = [0xd4, 0x37, 0x0c, 0x00]
+value    = "some_table"
+
+[[patch]]
+name     = "[EEPROM] CFW block (next block src addr)"
+address  = 0x000c37d4
+original = [0x1F, 0x1C]
+bytes    = [0x16, 0x07]
+
+###################
+## NetMD Patches ##
+###################
+
+[[patch]]
+name     = "[NetMD] Change factory handler table end sentinal detection"
+address  = 0x0007de5e
+original = [0xC2, 0x68]
+bytes    = [0x02, 0x7a]
+
+[[patch]]
+name     = "[NetMD] Add custom handler 0xFF #1"
+address  = 0x000c6580
+original = [0x00, 0x00, 0x00, 0x00]
+bytes    = [0xff, 0x03, 0x00, 0x00]
+
+[[patch]]
+name     = "[NetMD] Add custom handler 0xFF #2"
+address  = 0x000c6584
+original = [0x00, 0x00, 0x00, 0x00]
+value    = "cfw_factory_cmd_0xff_cfw_handler + 1"
+
+########################
+## Key input override ##
+########################
+
+[[patch]]
+name     = "[Input] Install cfw key2 lut hook"
+address  = 0x0003e41c
+original = [0x07, 0x49, 0x0a, 0x78, 0x00, 0x2a, 0x08, 0xd0]
+b        = "cfw_process_inp_state_key2 + 1"
+
 
 ###############################################
 ## Extension data/code for new functionality ##
