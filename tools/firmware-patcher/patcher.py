@@ -54,9 +54,9 @@ def resolve_symbol(value, symbols: dict[str, int]) -> int:
 
 
 def load_replacement(patch: dict, symbols: dict[str, int], addr: int) -> bytes:
-    kinds = [k for k in ("value", "bytes", "file", "chars", "bl") if k in patch]
+    kinds = [k for k in ("value", "bytes", "file", "chars", "bl", "b") if k in patch]
     if len(kinds) != 1:
-        raise ValueError("Patch must contain exactly one of: value, bytes, file, chars, bl")
+        raise ValueError("Patch must contain exactly one of: value, bytes, file, chars, bl, b")
 
     if "value" in patch:
         val = resolve_symbol(patch["value"], symbols)
@@ -82,6 +82,24 @@ def load_replacement(patch: dict, symbols: dict[str, int], addr: int) -> bytes:
         second = 0xF800 | (offset & 0x7FF)
         return struct.pack("<HH", first, second)
 
+    if "b" in patch:
+        target = resolve_symbol(patch["b"], symbols)
+
+        # Check if addr is aligned to 4 bytes (32-bit word boundary)
+        if addr % 4 != 0:
+            raise ValueError(f"'b' patch address {hex(addr)} is not 32-bit aligned")
+
+        #   addr+0: ldr r2, [pc, #0]
+        #   addr+2: bx r2
+        #   addr+4: .word target
+
+        ldr = 0x4A00 
+        bx  = 0x4710
+
+        return (
+            struct.pack("<HH", ldr, bx) +
+            struct.pack("<I", target)
+        )
 
 def main(cfg_path: Path):
     with cfg_path.open("rb") as f:
@@ -113,40 +131,45 @@ def main(cfg_path: Path):
     print("Firmware hash verified")
 
     # --- apply patches ---
+
     for idx, patch in enumerate(cfg["patch"], start=1):
         label = patch.get("name", f"patch_{idx}")
-        addr = resolve_symbol(patch["address"], symbols)
+        addresses = patch["address"]
+        if not isinstance(addresses, list):
+            addresses = [addresses]
 
-        data = load_replacement(patch, symbols, addr)
-        end = addr + len(data)
+        for addr_val in addresses:
+            addr = resolve_symbol(addr_val, symbols)
+            data = load_replacement(patch, symbols, addr)
+            end = addr + len(data)
 
-        if end > len(firmware):
-            raise RuntimeError(
-                f"[{label}] Out of range: {hex(addr)} + {len(data)} bytes"
-            )
-
-        # --- expected-original-bytes check ---
-        if "original" in patch:
-            o = patch["original"]
-            if isinstance(o, str):
-                expected = bytes(o, "ascii")
-            else:
-                expected = bytes(o)
-            actual = firmware[addr : addr + len(expected)]
-            if actual != expected:
+            if end > len(firmware):
                 raise RuntimeError(
-                    f"[{label}] Original bytes mismatch at {hex(addr)}\n"
-                    f"Expected: {expected.hex()}\n"
-                    f"Actual:   {actual.hex()}"
+                    f"[{label}] Out of range: {hex(addr)} + {len(data)} bytes"
                 )
 
-        print(
-            f"- [{label}] "
-            f"{hex(addr)} .. {hex(end)} "
-            f"({len(data)} bytes)"
-        )
+            # --- expected-original-bytes check ---
+            if "original" in patch:
+                o = patch["original"]
+                if isinstance(o, str):
+                    expected = bytes(o, "ascii")
+                else:
+                    expected = bytes(o)
+                actual = firmware[addr : addr + len(expected)]
+                if actual != expected:
+                    raise RuntimeError(
+                        f"[{label}] Original bytes mismatch at {hex(addr)}\n"
+                        f"Expected: {expected.hex()}\n"
+                        f"Actual:   {actual.hex()}"
+                    )
 
-        firmware[addr:end] = data
+            print(
+                f"- [{label}] "
+                f"{hex(addr)} .. {hex(end)} "
+                f"({len(data)} bytes)"
+            )
+
+            firmware[addr:end] = data
 
     out_path.write_bytes(firmware)
     print(f"Patched firmware written to {out_path}")
