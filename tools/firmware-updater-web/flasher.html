@@ -87,7 +87,13 @@
                     <li>Click "Connect Device"</li>
                     <li>Optional: backup your current firmware</li>
                     <li>While in NetMD mode, click "Enter Programming Mode"</li>
-                    <li>Reconnect to the device</li>
+                    <li>The device will disconnect. Reconnect to the device
+                        <ul>
+                            <li>Windows: you may need to re-activate Zadig for the device</li>
+                            <li>Linux: if the device is not visible, check your udev rules</li>
+                            <li>macOS: no action needed</li>
+                        </ul>
+                    </li>
                     <li>Select a firmware file</li>
                     <li>Click "Flash New Firmware"</li>
                     <li>Wait for completion</li>
@@ -133,18 +139,23 @@
             logEl.appendChild(line);
             logEl.scrollTop = logEl.scrollHeight;
         }
+
+        async function delay(d) {
+            await new Promise(r => setTimeout(r, d));
+        }
     </script>
     <script>
         const filters = [
             { vendorId: 0x054c, productId: 0x0286 },
             { vendorId: 0x054c, productId: 0x0223 },
             { vendorId: 0x054c, productId: 0x017e },
+            { vendorId: 0x054c, productId: 0x0335 },
             { vendorId: 0x054c, productId: 0xffff }
         ];
 
         const PID_NETMD = 0x0286;
 
-        const KNOWN_FW_VERSIONS = ["1.0r40", "1.0r60", "1.0r70", "1.0r80", "1.0r90", "1.0rA0"];
+        const KNOWN_FW_VERSIONS = ["1.0r30", "1.0r40", "1.0r60", "1.0r70", "1.0r80", "1.0r90", "1.0rA0"];
 
         const CMD_DOWN = { req: 6, tag: "DOWN" };
         const CMD_EXEC = { req: 3, tag: "EXEC" };
@@ -233,13 +244,21 @@
             device = await navigator.usb.requestDevice({ filters });
             await device.open();
             if (!device.configuration) await device.selectConfiguration(1);
+
             await device.claimInterface(0);
 
             connected = true;
             if (deviceIsInNetMDMode()) {
                 log("Device connected in NetMD mode. Please backup your current firmware, or enter programming mode.", "ok");
 
+                await delay(100);
+                await readNetMDReply();
                 const fw_version = await getFirmwareVersion();
+
+                if (fw_version === false) {
+                    throw new Error("Failed to retrieve version from device! Please check your connection or cable.");
+                }
+
                 log("Current firmware version: " + fw_version.version);
 
                 if (!fw_version.custom && KNOWN_FW_VERSIONS.indexOf(fw_version.version) == -1) {
@@ -293,22 +312,104 @@
             await sendRawData(0x80, new Uint8Array(cmd));
         }
 
+        async function readNetMDReply() {
+            try {
+                let reply_length = 0;
+                let attempts = 0;
+                
+                while (attempts < 5 && reply_length === 0) {
+                    try {
+                        if (attempts != 0)
+                            await delay(10);
+
+                        //console.log("A");
+                        const raw_reply_length = await device.controlTransferIn({
+                            requestType: "vendor", recipient: "interface",
+                            request: 0x01, value: 0, index: 0
+                        }, 4);
+
+                        if (raw_reply_length.data.byteLength == 0) {
+                            attempts++;
+                            continue;
+                        }
+
+                        reply_length = raw_reply_length.data.getUint8(2);
+                        
+                        if (reply_length === 0) {
+                            attempts++;
+                            continue;
+                        }
+                        
+                        break;
+                    } catch (e) {
+                        console.log(e);
+                        console.trace()
+                        attempts++;
+                    }
+                }
+
+                if (reply_length === 0)
+                    return false;
+
+                //console.log("B", reply_length);
+                const raw_reply = await device.controlTransferIn({
+                    requestType: "vendor", recipient: "interface",
+                    request: 0x81, value: 0, index: 0
+                }, reply_length);
+
+                return raw_reply.data;
+            } catch (e) {
+                console.log(e);
+                console.trace()
+                return false;
+            }
+        }
+
         async function sendNetMDFactoryCommand(cmd) {
             await sendRawData(0xff, new Uint8Array(cmd));
         }
 
         async function readNetMDFactoryReply() {
             try {
-                const raw_reply_length = await device.controlTransferIn({
-                    requestType: "vendor", recipient: "interface",
-                    request: 0xff, value: 0, index: 0
-                }, 6);
+                let reply_length = 0;
+                let attempts = 0;
+                
+                while (attempts < 5 && reply_length === 0) {
+                    try {
+                        if (attempts != 0)
+                            await delay(25);
 
-                if (raw_reply_length.data.byteLength == 0)
+                        //console.log("A");
+                        const raw_reply_length = await device.controlTransferIn({
+                            requestType: "vendor", recipient: "interface",
+                            request: 0xff, value: 0, index: 0
+                        }, 6);
+
+                        if (raw_reply_length.data.byteLength == 0) {
+                            attempts++;
+                            continue;
+                        }
+
+                        reply_length = raw_reply_length.data.getUint8(4);
+                        
+                        if (reply_length === 0) {
+                            attempts++;
+                            continue;
+                        }
+                        
+                        break;
+                    } catch (e) {
+                        console.log(e);
+                        console.trace();
+                        attempts++;
+                    }
+                }
+
+                //console.log("B", reply_length);
+
+                if (reply_length === 0)
                     return false;
-
-                const reply_length = raw_reply_length.data.getUint16(4);
-
+                
                 const raw_reply = await device.controlTransferIn({
                     requestType: "vendor", recipient: "interface",
                     request: 0xff, value: 0, index: 0
@@ -336,6 +437,9 @@
 
             await sendNetMDFactoryCommand([0x00, 0x18, 0x24, 0xff, hi_a, hi_b, lo_a, lo_b, size])
             reply = await readNetMDFactoryReply();
+
+            if (reply === false)
+                throw new Error("Could not read from device memory, no result returned!");
 
             return new Uint8Array(reply.buffer).slice(9);
         }
@@ -387,17 +491,20 @@
         }
 
         async function ensureNetMDFactoryReader() {
+            const addr_data_abort_handler = 0x10;
+            const code_data_abort_handler = [0x01, 0x03, 0x40, 0xe2, 0x80, 0x30, 0x80, 0xe2, 0x08, 0xf0, 0x5e, 0xe2 ];
+
             /*
-                0x0200_0000:  01 03 40 E2    sub  r0, r0, #0x4000000
-                0x0200_0004:  20 30 80 E2    add  r3, r0, #0x20 ; we may want to tweak this value for larger reads - though 32 is the nicest round number
+                0x0200_0000:  01 03 40 E2    sub  r0, r0, #0x0400_0000
+                0x0200_0004:  80 30 80 E2    add  r3, r0, #0x80
                 0x0200_0008:  08 F0 5E E2    subs pc, lr, #8
             */
-
-            await factory_write_dram(0, [0x01, 0x03, 0x40, 0xe2, 0x80, 0x30, 0x80, 0xe2, 0x08, 0xf0, 0x5e, 0xe2 ]); // write to 0x0200_0000
-            await patch(0x10, [0x02, 0xf4, 0xa0, 0xe3], 0); // jump to 0x0200_0000
+            
+            await factory_write_dram(0, code_data_abort_handler); // write to 0x0200_0000
+            await patch(addr_data_abort_handler, [0x02, 0xf4, 0xa0, 0xe3], 0); // point DataAbort handler to our code
         }
 
-        async function factory_arbritrary_read(addr, len) {
+        async function factory_arbitrary_read(addr, len) {
             // you need to call ensureNetMDFactoryReader before, to ensure re-mapping of values
             const base = 0x0400_0000 - 0x0200_0000;
             return await factory_read_dram(base + addr, len);
@@ -407,11 +514,15 @@
         async function sendAuth() {
             // Open/read/close subunit descriptor
             await sendNetMDCommand([0x00, 0x18, 0x08, 0x00, 0x01, 0x00]);
+            await readNetMDReply();
             await sendNetMDCommand([0x00, 0x18, 0x09, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            await readNetMDReply();
             await sendNetMDCommand([0x00, 0x18, 0x08, 0x00, 0x00, 0x00]);
+            await readNetMDReply();
 
             // Auth
             await sendNetMDFactoryCommand([0x00, 0x18, 0x02, 0xff, 0x04, 0x4d, 0x44, 0x57, 0x4d]);
+            await readNetMDFactoryReply();
         }
 
         async function sendStartDFU() {
@@ -426,7 +537,6 @@
         async function getFirmwareVersion() {
             await sendAuth();
             await sendNetMDFactoryCommand([0x00, 0x18, 0x13, 0xff, 0x00]);
-
             const version = await readNetMDFactoryReply();
 
             if (version !== false && version.getUint8(0) === 9) {
@@ -537,7 +647,7 @@
         }
 
 
-        // Load small util code into memory, enabling arbritrary mem reader and validator 
+        // Load small util code into memory, enabling arbitrary mem reader and validator 
 
         async function ensureReader() {
             log("Uploading read/write stub...");
@@ -574,11 +684,14 @@
         // Verify a block of memory using Sony's hashing scheme
         // Technically we don't need to chunk here, but it seems to make things a bit more robust/safe
 
-        async function verifyBlobHash(addr, blob) {
+        async function verifyBlobHash(addr, blob, count) {
+            if (typeof count == "undefined")
+                count = blob.length
+
             log("Verifying uploaded blob...");
             let offset = 0;
 
-            while (offset < blob.length) {
+            while (offset < count) {
                 const chunkSize = 0x1000;
 
                 const localHash = sonyHash(blob.slice(offset, offset + chunkSize));
@@ -590,10 +703,10 @@
                 }
 
                 offset += chunkSize;
-                progressEl.value = (offset / blob.length) * 100;
+                progressEl.value = (offset / count) * 100;
             }
 
-            log(`Verification successful! ${blob.length} bytes verified`, "ok");
+            log(`Verification successful! ${count} bytes verified`, "ok");
             return true;
         }
 
@@ -610,7 +723,6 @@
             const validSize2 = FLASH_FW_SIZE - 0x1000;
 
             if (firmware.length !== validSize1 && firmware.length !== validSize2) {
-                log("Invalid firmware file!", "err");
                 return false;
             }
 
@@ -620,7 +732,6 @@
             const marker = new TextDecoder("utf-8").decode(markerBytes);
 
             if (marker !== "MAP1") {
-                log("Invalid firmware file!", "err");
                 return false;
             }
 
@@ -677,7 +788,7 @@
             }
             programming = false;
 
-            if (!await verifyBlobHash(FLASH_FW_ADDR, firmware)) {
+            if (!await verifyBlobHash(FLASH_FW_ADDR, firmware, FLASH_FW_SIZE - 0x1000)) {
                 throw new Error("Flash verification failed! Please retry!");
             }
 
@@ -706,6 +817,7 @@
             const fw = new Uint8Array(await file.arrayBuffer());
 
             if (!validateFirmware(fw)) {
+                log("Invalid firmware file!", "err");
                 return;
             }
 
@@ -740,7 +852,7 @@
                 await ensureNetMDFactoryReader();
                 step = 128;
                 reader = async function (addr) {
-                    return await factory_arbritrary_read(addr, step);
+                    return await factory_arbitrary_read(addr, step);
                 }
             } else if (deviceIsInProgrammingMode()) {
                 await ensureReader();
@@ -779,6 +891,14 @@
                 }
 
                 log(`Backup read complete: ${total} bytes`, "ok");
+
+                if (!validateFirmware(out)) {
+                    log(`WARNING: managed to make a backup of the firmware, however it does not seem valid!`, "err");
+                    log(`WARNING: please retry backing up the firmware in programming mode!`, "err");
+                } else {
+                    log(`Firmware backup seems to be valid!`, "ok");
+                }
+
 
                 const wordArray = CryptoJS.lib.WordArray.create(out);
                 const sha1 = CryptoJS.SHA1(wordArray).toString();

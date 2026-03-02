@@ -60,10 +60,9 @@ body {
 
 .info-section ul,
 .info-section ol {
-    margin: 5px 0;
     font-size: 13px;
     line-height: 1.5;
-    margin: 1.5em;
+    margin-left: 1.5em;
     padding: 0;
 }
 
