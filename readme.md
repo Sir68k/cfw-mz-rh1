@@ -58,8 +58,8 @@ python tools/firmware-patcher/patcher.py src/patches.toml
 
 ## References
 
+- [Custom Firmware for MZ-RH1](https://sir68k.re/rh1/fw/)
 - [Custom Firmware Development for MZ-RH1 - Ready for Testing!](https://sir68k.re/posts/rh1-firmware-available/)
-- [Custom Firmware Development for MZ-RH1](https://sir68k.re/posts/rh1-firmware/)
 - [RH1 Display Module Project](https://sir68k.re/rh1)
 
 ## License

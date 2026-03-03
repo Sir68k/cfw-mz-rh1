@@ -1,7 +1,7 @@
 [firmware]
 path   = "base-fw/flash_v1.0A0_without_key_sector.bin"
 sha256 = "97632e25627376845a00bcb28f312af5c56766f319d56f5da1d49cdb96eb923b"
-output = "build/flash_v1.2r4_sir68k.bin"
+output = "build/fw_rh1_v1.2r5_sir68k.bin"
 symbols = "src/extension-code/build/extension.sym"
 
 ################
@@ -12,13 +12,13 @@ symbols = "src/extension-code/build/extension.sym"
 name     = "[FW Version] In binary"
 address  = 0x00000b30
 original = [ 0xA0, 0x10 ]
-bytes    = [ 0x04, 0x12 ]
+bytes    = [ 0x05, 0x12 ]
 
 [[patch]]
 name     = "[FW Version] As a string"
 address  = 0x00000b32
 original = "1.0A0"
-bytes    = [0x31, 0x2e, 0x32, 0xB2, 0xA4] # 1.2r4 where r2 uses smaller glyphs
+bytes    = [0x31, 0x2e, 0x32, 0xB2, 0xA5] # 1.2r5 where r2 uses smaller glyphs
 
 [[patch]]
 name     = "[FW Version] Enable full FW version in menu #1"

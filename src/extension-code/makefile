@@ -1,11 +1,10 @@
-GCC_PATH ?= /Applications/ArmGNUToolchain/14.2.rel1/arm-none-eabi/bin
-
-CC      = $(GCC_PATH)/arm-none-eabi-gcc
-LD      = $(GCC_PATH)/arm-none-eabi-ld
-OCPY    = $(GCC_PATH)/arm-none-eabi-objcopy
-ODUMP   = $(GCC_PATH)/arm-none-eabi-objdump
-SZ      = $(GCC_PATH)/arm-none-eabi-size
-NM      = $(GCC_PATH)/arm-none-eabi-nm 
+CROSS   ?= arm-none-eabi-
+CC      = $(CROSS)gcc
+LD      = $(CROSS)ld
+OCPY    = $(CROSS)objcopy
+ODUMP   = $(CROSS)objdump
+SZ      = $(CROSS)size
+NM      = $(CROSS)nm
 MKDIR   = mkdir
 
 CFLAGS +=   -nostdlib \
