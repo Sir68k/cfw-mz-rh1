@@ -264,13 +264,34 @@ static void get_scroll_frame(char *display, struct scroll_state *state)
     }
 }
 
+// The display thread calls this function regularly; we use it to
+// invalidate our track cache in case that the TOC is still loading
+uint32_t cfw_get_operation_state() {
+    uint32_t state = *operation_state;
+
+    if (state == 1) { // TOC is being read
+        track_view_state.invalidated = 1;
+    }
+
+    return state;
+}
+
 static void track_update_state() {
     uint32_t updated = 0;
     uint32_t h,m,s;
 
     get_track_progress(1, 0, &h, &m, &s);
+
+    if (track_view_state.invalidated) {
+        track_view_state.track_id = 0;
+        track_view_state.invalidated = 0;
+
+        // we will only continue if we haven't had two invalidation requests in a row
+        // this allows us to avoid regenerating the displays strings over and over
+        return;
+    }
     
-    if ((*current_track != track_view_state.track_id) || track_view_state.invalidated) {
+    if (*current_track != track_view_state.track_id) {
         updated = 1;
         track_view_state.track_id = *current_track;
 

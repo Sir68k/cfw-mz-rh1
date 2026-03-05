@@ -66,6 +66,12 @@ address  = 0x00030ab8
 original = [0x00,0xf0,0x52,0xf8]
 bl       = "hook_decode_katakana_name"
 
+[[patch]]
+name     = "[Track Name Ext] Hook into operation state tick"
+address  = 0x0003a352
+original = [0x11, 0xf0, 0xf9, 0xfb]
+bl       = "cfw_get_operation_state"
+
 #######################
 ## CFW Init Patches ##
 #######################

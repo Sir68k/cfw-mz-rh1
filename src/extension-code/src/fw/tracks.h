@@ -28,6 +28,7 @@ static volatile uint16_t* current_group = (volatile uint16_t*) 0x008020f8;
 
 static volatile uint8_t*  disc_info = (volatile uint8_t*)  0x008006a5;
 static volatile uint32_t* disc_type = (volatile uint32_t*) 0x00800654;
+static volatile uint8_t*  operation_state = (volatile uint8_t*) 0x008007a8;
 
 typedef uint32_t ftype_get_track_name(
     uint32_t idx, 
